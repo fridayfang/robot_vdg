@@ -33,6 +33,10 @@ def l2_loss(network_output, gt, return_map=False):
     else: 
         return ((network_output - gt) ** 2)
 
+def psnr(img1, img2):
+    mse = (((img1 - img2)) ** 2).view(-1).mean()
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()

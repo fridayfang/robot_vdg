@@ -502,7 +502,11 @@ class ViewCrafterWrapper:
         else: 
             ori_traj_c2ws = defined_camera_traj_c2ws.clone()
             # be very careful here: 
-            defined_camera_traj_c2ws = torch.bmm(torch.linalg.inv(transform_back).unsqueeze(0).expand_as(defined_camera_traj_c2ws), 
+            # Ensure transform_back and defined_camera_traj_c2ws have the same dtype (Float)
+            transform_back_f = transform_back.to(torch.float32)
+            defined_camera_traj_c2ws = defined_camera_traj_c2ws.to(torch.float32)
+            
+            defined_camera_traj_c2ws = torch.bmm(torch.linalg.inv(transform_back_f).unsqueeze(0).expand_as(defined_camera_traj_c2ws), 
                                                  defined_camera_traj_c2ws)
 
 

@@ -122,6 +122,7 @@ class OptimizationParams(ParamGroup):
 
         
         self.use_trajectory_pool = True
+        self.robot_traj_path = ""
 
         # guidance param
         self.guidance_recon_loss = "l2"

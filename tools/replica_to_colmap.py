@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import imageio
 import math
+from tools.colmap_bin_utils import write_cameras_bin, write_images_bin, write_points3D_bin
 
 convert_mat = np.array([
     [1, 0, 0, 0], 
@@ -97,8 +98,13 @@ def pipeline(scene, base_path):
     save_cameras(intrinsics, sparse_path, H, W)
     save_imagestxt(poses_w2c, sparse_path)
     
+    # Also save as binary (.bin)
+    write_cameras_bin(intrinsics, sparse_path, H, W)
+    write_images_bin(poses_w2c, sparse_path)
+    write_points3D_bin(sparse_path)
+    
     print(path)
 
 
 for scene in ['office_2/Sequence_2', 'office_3/Sequence_1', 'office_4/Sequence_2', 'room_0/Sequence_2', 'room_1/Sequence_1', 'room_2/Sequence_1']: 
-    pipeline(scene, base_path = '/home/ma-user/work/zhongyj/code/guidedvd_release/dataset/Replica')  # please use absolute path!
+    pipeline(scene, base_path = '/workspace_fs/guidedvd-3dgs/dataset/Replica')  # please use absolute path!

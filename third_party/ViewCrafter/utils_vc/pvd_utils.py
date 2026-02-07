@@ -36,15 +36,16 @@ from torchvision.transforms import CenterCrop, Compose, Resize
 
 def save_video(data,images_path,folder=None):
     if isinstance(data, np.ndarray):
-        tensor_data = (torch.from_numpy(data) * 255).to(torch.uint8)
+        tensor_data = (data * 255).astype(np.uint8)
     elif isinstance(data, torch.Tensor):
-        tensor_data = (data.detach().cpu() * 255).to(torch.uint8)
+        tensor_data = (data.detach().cpu().numpy() * 255).astype(np.uint8)
     elif isinstance(data, list):
         folder = [folder]*len(data)
         images = [np.array(Image.open(os.path.join(folder_name,path))) for folder_name,path in zip(folder,data)]
-        stacked_images = np.stack(images, axis=0)
-        tensor_data = torch.from_numpy(stacked_images).to(torch.uint8)
-    torchvision.io.write_video(images_path, tensor_data, fps=8, video_codec='h264', options={'crf': '10'})
+        tensor_data = np.stack(images, axis=0).astype(np.uint8)
+    
+    # 使用 imageio 替代 torchvision.io.write_video 以避免 PyAV 兼容性问题
+    imageio.mimsave(images_path, tensor_data, fps=8, quality=8)
 
 def get_input_dict(img_tensor,idx,dtype = torch.float32):
 

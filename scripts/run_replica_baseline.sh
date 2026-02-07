@@ -3,8 +3,8 @@
 exp_name=$1
 export CUDA_VISIBLE_DEVICES=$2  # CUDA device to use
 
-datasets=('office_2/Sequence_2' 'office_3/Sequence_1' 'office_4/Sequence_2' 'room_0/Sequence_2' 'room_1/Sequence_1' 'room_2/Sequence_1')
-# datasets=('room_0/Sequence_2')
+datasets=('office_2/Sequence_2')
+# datasets=('office_2/Sequence_2' 'office_3/Sequence_1' 'office_4/Sequence_2' 'room_0/Sequence_2' 'room_1/Sequence_1' 'room_2/Sequence_1')
 
 workspaces=()
 for dataset in "${datasets[@]}"; do

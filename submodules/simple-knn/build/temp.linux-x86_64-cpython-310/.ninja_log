@@ -1,0 +1,4 @@
+# ninja log v7
+1	14789	1769048772573972940	/workspace_fs/guidedvd-3dgs/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/simple_knn.o	56c01a5a5b3f653c
+0	15401	1769048772572972925	/workspace_fs/guidedvd-3dgs/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/ext.o	6f625192934fa264
+1	64616	1769048772573972940	/workspace_fs/guidedvd-3dgs/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/spatial.o	81a3b085de7ca7b0

@@ -1,0 +1,52 @@
+[
+    {
+        "target_idx": 159,
+        "closest_seq1_idx": 69,
+        "dist": 0.5262809758914686
+    },
+    {
+        "target_idx": 160,
+        "closest_seq1_idx": 69,
+        "dist": 0.5262809758914686
+    },
+    {
+        "target_idx": 161,
+        "closest_seq1_idx": 69,
+        "dist": 0.5262809758914686
+    },
+    {
+        "target_idx": 162,
+        "closest_seq1_idx": 69,
+        "dist": 0.5262809758914686
+    },
+    {
+        "target_idx": 155,
+        "closest_seq1_idx": 68,
+        "dist": 0.5326589503843474
+    },
+    {
+        "target_idx": 156,
+        "closest_seq1_idx": 68,
+        "dist": 0.5326589503843474
+    },
+    {
+        "target_idx": 157,
+        "closest_seq1_idx": 68,
+        "dist": 0.5326589503843474
+    },
+    {
+        "target_idx": 158,
+        "closest_seq1_idx": 68,
+        "dist": 0.5326589503843474
+    },
+    {
+        "target_idx": 163,
+        "closest_seq1_idx": 77,
+        "dist": 0.5374641728387857
+    },
+    {
+        "target_idx": 164,
+        "closest_seq1_idx": 77,
+        "dist": 0.5374641728387857
+    }
+]

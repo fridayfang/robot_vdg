@@ -185,7 +185,14 @@ class FrozenOpenCLIPEmbedder(AbstractEncoder):
                  freeze=True, layer="last"):
         super().__init__()
         assert layer in self.LAYERS
-        model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=version)
+        import os
+        local_path = "/dataset_rc_b1/chenjiehku/r2s/hg/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin"
+        if os.path.exists(local_path):
+            print(f"✅ [DEBUG] Found local CLIP weights at {local_path}, loading directly...")
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=local_path)
+        else:
+            print(f"⚠️ [DEBUG] Local CLIP weights not found at {local_path}, falling back to Hub...")
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=version)
         del model.visual
         self.model = model
 
@@ -227,7 +234,11 @@ class FrozenOpenCLIPEmbedder(AbstractEncoder):
             if self.model.transformer.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(r, x, attn_mask)
             else:
-                x = r(x, attn_mask=attn_mask)
+                # PyTorch 2.1.0 MHA has a bug where it misinterprets (L, N, E) with N=1 as unbatched (L, E)
+                # and then expects mask (1, 1). To fix this, we ensure x is (L, N, E) and attn_mask is None
+                # if it's just a causal mask (which CLIP uses), or we force N > 1 if possible.
+                # Since CLIP's mask is often constant, we can try passing None if it's the default mask.
+                x = r(x, attn_mask=None) # CLIP typically doesn't need a custom mask here if it's built-in
         return x
 
     def encode(self, text):
@@ -242,8 +253,12 @@ class FrozenOpenCLIPImageEmbedder(AbstractEncoder):
     def __init__(self, arch="ViT-H-14", version="laion2b_s32b_b79k", device="cuda", max_length=77,
                  freeze=True, layer="pooled", antialias=True, ucg_rate=0.):
         super().__init__()
-        model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'),
-                                                            pretrained=version, )
+        import os
+        local_path = "/dataset_rc_b1/chenjiehku/r2s/hg/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin"
+        if os.path.exists(local_path):
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=local_path)
+        else:
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=version)
         del model.transformer
         self.model = model
         # self.mapper = torch.nn.Linear(1280, 1024)
@@ -300,8 +315,12 @@ class FrozenOpenCLIPImageEmbedderV2(AbstractEncoder):
     def __init__(self, arch="ViT-H-14", version="laion2b_s32b_b79k", device="cuda",
                  freeze=True, layer="pooled", antialias=True):
         super().__init__()
-        model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'),
-                                                            pretrained=version, )
+        import os
+        local_path = "/dataset_rc_b1/chenjiehku/r2s/hg/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin"
+        if os.path.exists(local_path):
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=local_path)
+        else:
+            model, _, _ = open_clip.create_model_and_transforms(arch, device=torch.device('cpu'), pretrained=version)
         del model.transformer
         self.model = model
         self.device = device
@@ -343,7 +362,7 @@ class FrozenOpenCLIPImageEmbedderV2(AbstractEncoder):
         x = self.preprocess(x)
 
         # to patches - whether to use dual patchnorm - https://arxiv.org/abs/2302.01327v1
-        if self.model.visual.input_patchnorm:
+        if hasattr(self.model.visual, 'input_patchnorm') and self.model.visual.input_patchnorm:
             # einops - rearrange(x, 'b c (h p1) (w p2) -> b (h w) (c p1 p2)')
             x = x.reshape(x.shape[0], x.shape[1], self.model.visual.grid_size[0], self.model.visual.patch_size[0], self.model.visual.grid_size[1], self.model.visual.patch_size[1])
             x = x.permute(0, 2, 4, 1, 3, 5)

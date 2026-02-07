@@ -7,3 +7,8 @@ dust3r_results*
 compare_dir*
 dataset
 
+scripts/*.pth
+output/
+dataset/
+*.pth
+*.ply

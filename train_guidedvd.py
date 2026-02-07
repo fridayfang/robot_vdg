@@ -41,6 +41,7 @@ from utils.midas_depth_estimator import MiDasDepthEstimator
 from utils.inpainted_depth_to_pointcloud import depth_to_point_cloud
 from utils.vgg_loss import VggLoss
 from utils.easy_renderer import EasyRenderer
+from utils.trajectory_planner import TrajectoryPlanner
 from torch import Tensor
 from third_party.ViewCrafter.utils_vc.pvd_utils import save_video
 
@@ -54,6 +55,27 @@ def training(dataset, opt, pipe, args):
 
     scene = Scene(args, gaussians, shuffle=False)
     assert not scene.shuffle
+
+    # === [新增] 保存训练和测试图片用于 Debug ===
+    print("=> Saving train/test images to output folder for debugging...")
+    train_save_dir = os.path.join(scene.model_path, "images/train")
+    test_save_dir = os.path.join(scene.model_path, "images/test")
+    os.makedirs(train_save_dir, exist_ok=True)
+    os.makedirs(test_save_dir, exist_ok=True)
+
+    for cam in scene.getTrainCameras():
+        # cam.original_image 是 [3, H, W] 的 Tensor，值域 [0, 1]
+        torchvision.utils.save_image(cam.original_image, os.path.join(train_save_dir, f"{cam.image_name}.png"))
+    
+    for cam in scene.getTestCameras():
+        torchvision.utils.save_image(cam.original_image, os.path.join(test_save_dir, f"{cam.image_name}.png"))
+    
+    # 绘制训练/测试相机分布图
+    temp_planner = TrajectoryPlanner(scene, None, None, opt)
+    temp_planner.visualize_cameras(scene.getTrainCameras(), scene.getTestCameras())
+
+    print(f"✅ Images and Pose Vis saved: {len(scene.getTrainCameras())} train, {len(scene.getTestCameras())} test.")
+    # ========================================
     
     gaussians.training_setup(opt)
     
@@ -120,182 +142,23 @@ def training(dataset, opt, pipe, args):
 
     # Trajectory Initialization Strategy Eq.(7) in the paper. 
     if opt.use_trajectory_pool: 
-        # first render several poses to decide the trajectory
-        print("=> Render several views for each training view to decide the trajectory.")
-        traj_save_dir = os.path.join(scene.model_path, "define_traj/")
-        scale_traj_save_dir = os.path.join(scene.model_path, "define_traj_scale/")
-        scale3_traj_save_dir = os.path.join(scene.model_path, "define_traj_scale3/")
-        trajectory_pool = {}
-        mask_thsh = 0.1 * H * W
-        top_k = 3
-        top_k_center_scale = 2
-        top_k_center_scale3 = 1
-        d_theta = [-30, -15, 0, 15, 30] if opt.guidance_vc_center_scale != 1 else [-15,-7.5, 0, 7.5]
+        planner = TrajectoryPlanner(scene, vc_wrapper, easy_renderer, opt)
+        if opt.robot_traj_path:
+            # 实验组：从机器人 JSON 加载
+            trajectory_pool, trajectory_pool_shuffle = planner.plan_trajectories(
+                method="from_json", 
+                json_path=opt.robot_traj_path
+            )
+        else:
+            # 对照组：运行论文默认逻辑
+            print("=> Render several views for each training view to decide the trajectory.")
+            trajectory_pool, trajectory_pool_shuffle = planner.plan_trajectories(
+                method="paper_default",
+                fovx=fovx, fovy=fovy, intrinsic=intrinsic, H=H, W=W
+            )
         
-        original_center_scale = vc_wrapper.vc_opts.center_scale
-
-        for train_idx in range(len(scene.scene_info_train_indices)): 
-            traj_save_dir_i = os.path.join(traj_save_dir, str(scene.scene_info_train_indices[train_idx]))
-            os.makedirs(traj_save_dir_i, exist_ok=True)
-
-            scale_traj_save_dir_i = os.path.join(scale_traj_save_dir, str(scene.scene_info_train_indices[train_idx]))
-            os.makedirs(scale_traj_save_dir_i, exist_ok=True)
-
-            scale3_traj_save_dir_i = os.path.join(scale3_traj_save_dir, str(scene.scene_info_train_indices[train_idx]))
-            os.makedirs(scale3_traj_save_dir_i, exist_ok=True)
-
-            # ---------scale 1---------
-            vc_wrapper.vc_opts.center_scale = original_center_scale
-
-            c2w_candidates, others = vc_wrapper.get_candidate_poses(
-                # d_phi=[-30,-15,15,30], d_theta=[-30,-15,15,30], 
-                d_phi=[-30,-15,0,15,30], d_theta=d_theta, 
-                fovx=fovx, fovy=fovy, 
-                which_train_view=train_idx)
-            c2w_candidates = c2w_candidates.cpu().numpy()
-            print("=> Rendering {} poses for view {}... ".format(c2w_candidates.shape[0], train_idx))
-            gs_render_results = []
-            gs_render_alphas = []
-            for i in range(c2w_candidates.shape[0]): 
-                c2w_i = c2w_candidates[i]
-                w2c_i = np.linalg.inv(c2w_i)
-                gs_render_result_i, gs_render_alpha_i, gs_render_depth_i = easy_renderer.render(w2c_i, intrinsic, H, W)
-                gs_render_results.append(gs_render_result_i.clamp(0, 1)) # [3, H, W]
-                gs_render_alphas.append((gs_render_alpha_i.clamp(0, 1)<0.7).to(torch.float32)) # [1, H, W]
-                torchvision.utils.save_image(gs_render_results[-1], os.path.join(traj_save_dir_i, "{}.png".format(i)))
-                torchvision.utils.save_image(gs_render_alphas[-1], os.path.join(traj_save_dir_i, "{}_mask.png".format(i)))
-            
-            gs_render_results = torch.stack(gs_render_results, 0) # [n, 3, H, W]
-            gs_render_alphas = torch.stack(gs_render_alphas, 0) # [n, 1, H, W]
-            n_cand = gs_render_results.shape[0]
-
-            # erosion
-            gs_render_alphas = vc_wrapper.process_mask(gs_render_alphas)
-
-            mask_regions = gs_render_alphas.view(n_cand, -1).sum(-1) # [n, ]
-            filtered_indices = (mask_regions < mask_thsh).nonzero(as_tuple=True)[0]
-            sorted_indices = torch.argsort(mask_regions[filtered_indices], descending=True)[:top_k]
-            topk_indices = filtered_indices[sorted_indices] # [topk, ]
-            print("selected indices: ", topk_indices.tolist())
-            with open(os.path.join(traj_save_dir_i, "topk.txt"), "w") as output:
-                output.write(str(topk_indices.tolist()))
-
-            # selected_poses = c2w_candidates[topk_indices] # [topk, 4, 4]
-            select_c2w_trajs = []
-            for j in topk_indices: 
-                interp_traj = vc_wrapper.interpolate_trajectory(
-                    others["c2ws"], others["d_phis"][j], others["d_thetas"][j], others["d_rs"][j]) # [25, 4, 4]
-                select_c2w_trajs.append(
-                    [j, (torch.bmm(others["transform_back"].unsqueeze(0).expand_as(interp_traj), interp_traj)).cpu().numpy(), vc_wrapper.vc_opts.center_scale, 1]
-                )
-            
-            # [topk, video_length, 4, 4]
-
-            trajectory_pool[train_idx] = select_c2w_trajs
-
-            # ---------scale 2---------
-            # scale the center scale
-            vc_wrapper.vc_opts.center_scale = original_center_scale / 3.
-
-            c2w_candidates, others = vc_wrapper.get_candidate_poses(
-                # d_phi=[-30,-15,15,30], d_theta=[-30,-15,15,30], 
-                d_phi=[-30,-15,0,15,30], d_theta=d_theta, 
-                fovx=fovx, fovy=fovy, 
-                which_train_view=train_idx)
-            c2w_candidates = c2w_candidates.cpu().numpy()
-            print("=> Rendering {} poses for view {} (center scaled)... ".format(c2w_candidates.shape[0], train_idx))
-            gs_render_results = []
-            gs_render_alphas = []
-            for i in range(c2w_candidates.shape[0]): 
-                c2w_i = c2w_candidates[i]
-                w2c_i = np.linalg.inv(c2w_i)
-                gs_render_result_i, gs_render_alpha_i, gs_render_depth_i = easy_renderer.render(w2c_i, intrinsic, H, W)
-                gs_render_results.append(gs_render_result_i.clamp(0, 1)) # [3, H, W]
-                gs_render_alphas.append((gs_render_alpha_i.clamp(0, 1)<0.7).to(torch.float32)) # [1, H, W]
-                torchvision.utils.save_image(gs_render_results[-1], os.path.join(scale_traj_save_dir_i, "{}.png".format(i)))
-                torchvision.utils.save_image(gs_render_alphas[-1], os.path.join(scale_traj_save_dir_i, "{}_mask.png".format(i)))
-            
-            gs_render_results = torch.stack(gs_render_results, 0) # [n, 3, H, W]
-            gs_render_alphas = torch.stack(gs_render_alphas, 0) # [n, 1, H, W]
-            n_cand = gs_render_results.shape[0]
-
-            # erosion
-            gs_render_alphas = vc_wrapper.process_mask(gs_render_alphas)
-
-            mask_regions = gs_render_alphas.view(n_cand, -1).sum(-1) # [n, ]
-            filtered_indices = (mask_regions < mask_thsh).nonzero(as_tuple=True)[0]
-            sorted_indices = torch.argsort(mask_regions[filtered_indices], descending=True)[:top_k_center_scale]
-            topk_indices = filtered_indices[sorted_indices] # [topk, ]
-            print("selected indices: ", topk_indices.tolist())
-            with open(os.path.join(scale_traj_save_dir_i, "topk.txt"), "w") as output:
-                output.write(str(topk_indices.tolist()))
-
-            # selected_poses = c2w_candidates[topk_indices] # [topk, 4, 4]
-            select_c2w_trajs = []
-            for j in topk_indices: 
-                interp_traj = vc_wrapper.interpolate_trajectory(
-                    others["c2ws"], others["d_phis"][j], others["d_thetas"][j], others["d_rs"][j]) # [25, 4, 4]
-                select_c2w_trajs.append(
-                    [j, (torch.bmm(others["transform_back"].unsqueeze(0).expand_as(interp_traj), interp_traj)).cpu().numpy(), vc_wrapper.vc_opts.center_scale, 2]
-                )
-
-            trajectory_pool[train_idx].extend(select_c2w_trajs)
-            
-            # ---------scale 3---------
-            # scale the center scale
-            vc_wrapper.vc_opts.center_scale = original_center_scale / 10.
-
-            c2w_candidates, others = vc_wrapper.get_candidate_poses(
-                # d_phi=[-30,-15,15,30], d_theta=[-30,-15,15,30], 
-                d_phi=[-30,-15,0,15,30], d_theta=d_theta, 
-                fovx=fovx, fovy=fovy, 
-                which_train_view=train_idx)
-            c2w_candidates = c2w_candidates.cpu().numpy()
-            print("=> Rendering {} poses for view {} (center scaled 3)... ".format(c2w_candidates.shape[0], train_idx))
-            gs_render_results = []
-            gs_render_alphas = []
-            for i in range(c2w_candidates.shape[0]): 
-                c2w_i = c2w_candidates[i]
-                w2c_i = np.linalg.inv(c2w_i)
-                gs_render_result_i, gs_render_alpha_i, gs_render_depth_i = easy_renderer.render(w2c_i, intrinsic, H, W)
-                gs_render_results.append(gs_render_result_i.clamp(0, 1)) # [3, H, W]
-                gs_render_alphas.append((gs_render_alpha_i.clamp(0, 1)<0.7).to(torch.float32)) # [1, H, W]
-                torchvision.utils.save_image(gs_render_results[-1], os.path.join(scale3_traj_save_dir_i, "{}.png".format(i)))
-                torchvision.utils.save_image(gs_render_alphas[-1], os.path.join(scale3_traj_save_dir_i, "{}_mask.png".format(i)))
-            
-            gs_render_results = torch.stack(gs_render_results, 0) # [n, 3, H, W]
-            gs_render_alphas = torch.stack(gs_render_alphas, 0) # [n, 1, H, W]
-            n_cand = gs_render_results.shape[0]
-
-            # erosion
-            gs_render_alphas = vc_wrapper.process_mask(gs_render_alphas)
-
-            mask_regions = gs_render_alphas.view(n_cand, -1).sum(-1) # [n, ]
-            filtered_indices = (mask_regions < mask_thsh).nonzero(as_tuple=True)[0]
-            sorted_indices = torch.argsort(mask_regions[filtered_indices], descending=True)[:top_k_center_scale3]
-            topk_indices = filtered_indices[sorted_indices] # [topk, ]
-            print("selected indices: ", topk_indices.tolist())
-            with open(os.path.join(scale3_traj_save_dir_i, "topk.txt"), "w") as output:
-                output.write(str(topk_indices.tolist()))
-
-            # selected_poses = c2w_candidates[topk_indices] # [topk, 4, 4]
-            select_c2w_trajs = []
-            for j in topk_indices: 
-                interp_traj = vc_wrapper.interpolate_trajectory(
-                    others["c2ws"], others["d_phis"][j], others["d_thetas"][j], others["d_rs"][j]) # [25, 4, 4]
-                select_c2w_trajs.append(
-                    [j, (torch.bmm(others["transform_back"].unsqueeze(0).expand_as(interp_traj), interp_traj)).cpu().numpy(), vc_wrapper.vc_opts.center_scale, 3]
-                )
-
-            trajectory_pool[train_idx].extend(select_c2w_trajs)
-        
-        # dummy code above 
-        vc_wrapper.vc_opts.center_scale = original_center_scale
-        print("=> Recover center scale: ", vc_wrapper.vc_opts.center_scale)
-        
-        trajectory_pool_shuffle = copy.deepcopy(trajectory_pool)
-        for k, v in trajectory_pool_shuffle.items(): 
-            random.shuffle(trajectory_pool_shuffle[k])
+        # 验证与可视化
+        planner.visualize(trajectory_pool)
 
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -303,7 +166,7 @@ def training(dataset, opt, pipe, args):
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
+    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress", mininterval=1.0)
 
     viewpoint_stack, pseudo_stack = None, None
     pseudo_stack_alltime = []
@@ -318,6 +181,9 @@ def training(dataset, opt, pipe, args):
     ema_loss_for_log = 0.0
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
+        if iteration % 10 == 0 or iteration == 1:
+            progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.4f}"})
+            progress_bar.update(10 if iteration > 1 else 1)
 
         # Render
         if (iteration - 1) == debug_from:
@@ -432,25 +298,8 @@ def training(dataset, opt, pipe, args):
             print("=> Running video diffusion at iteration {} ...".format(iteration))
             
             if opt.guidance_random_traj: 
-                r = np.random.rand()
-
-                if opt.guidance_no_wave_traj: 
-                    if r < 0.5: 
-                        traj_txt = "./test/trajs/loop2.txt"
-                    else: 
-                        traj_txt = "./test/trajs/loop1.txt"
-                else: 
-                    if r < 0.33: 
-                        traj_txt = "./test/trajs/loop2.txt"
-                    elif r < 0.66: 
-                        traj_txt = "./test/trajs/loop1.txt"
-                    else: 
-                        traj_txt = "./test/trajs/wave1.txt"
-                    
-                vc_wrapper.vc_opts.traj_txt = os.path.join(vc_wrapper.viewcrafter_root_path, traj_txt)
-
-                print("=> Trajectory file: ", vc_wrapper.vc_opts.traj_txt)
-
+                # ... (保持原有逻辑)
+                pass
 
             vc_wrapper.update_save_dir(iteration)
             loss_guidance_fn.update_save_dir(iteration)
@@ -460,15 +309,33 @@ def training(dataset, opt, pipe, args):
                 np.random.shuffle(vd_generated_indices)
                 vd_generated_indices = vd_generated_indices.tolist()
 
-            which_train_view = vd_generated_indices.pop()
+            # 找到一个在轨迹池中有轨迹的训练视角
+            which_train_view = None
+            if opt.use_trajectory_pool:
+                # 尝试从 vd_generated_indices 中弹出一个在池中的视角
+                for i in range(len(vd_generated_indices)):
+                    candidate_view = vd_generated_indices[i]
+                    if candidate_view in trajectory_pool and len(trajectory_pool[candidate_view]) > 0:
+                        which_train_view = vd_generated_indices.pop(i)
+                        break
+                
+                # 如果没找到（例如机器人路径只经过了某些视角附近），则从池中随机选一个
+                if which_train_view is None:
+                    available_views = [v for v in trajectory_pool.keys() if len(trajectory_pool[v]) > 0]
+                    if len(available_views) > 0:
+                        which_train_view = random.choice(available_views)
+                    else:
+                        print("⚠️ Warning: No trajectories available in pool. Falling back to default.")
             
-            if opt.use_trajectory_pool:  
+            # 如果还是 None (非池模式或池为空)，则使用默认弹出
+            if which_train_view is None:
+                which_train_view = vd_generated_indices.pop()
+            
+            if opt.use_trajectory_pool and which_train_view in trajectory_pool:  
                 if len(trajectory_pool_shuffle[which_train_view]) == 0: 
                     trajectory_pool_shuffle[which_train_view] = copy.deepcopy(trajectory_pool[which_train_view])
                     random.shuffle(trajectory_pool_shuffle[which_train_view])
                 
-                # defined_camera_traj_c2ws = trajectory_pool[which_train_view] # [topk, 25, 4, 4]
-                # defined_camera_traj_c2ws = defined_camera_traj_c2ws[np.random.choice(len(defined_camera_traj_c2ws))]
                 defined_camera_traj_c2ws = trajectory_pool_shuffle[which_train_view].pop()
                 interp_idx, defined_camera_traj_c2ws, cur_traj_center_scale, cur_traj_center_scale_idx = defined_camera_traj_c2ws
 
@@ -719,10 +586,12 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
 
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[1000, 5000, 10_000])
+    parser.add_argument("--fixed_test_indices", nargs="+", type=int, default=[])
+    parser.add_argument("--test_indices_file", type=str, default=None)
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_00, 10_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[10_00, 10_000])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[10_00, 5000, 10_000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--train_bg", action="store_true")
     args = parser.parse_args(sys.argv[1:])

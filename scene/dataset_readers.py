@@ -11,6 +11,7 @@
 import glob
 import os
 import sys
+from argparse import Namespace
 
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -264,16 +265,27 @@ def readColmapSceneInfo(path, images, dataset, eval, n_views=0,
     scene = path.split("/")[-1]
     if dataset == "Replica": 
         split = path.split("/")
-        scene, seq = split[-2], split[-1]
-        scene, scene_id = scene.split("_")[0], scene.split("_")[1]
-        seq_id = seq.split("_")[1]
-        scene = scene+scene_id+"_seq"+seq_id
+        try:
+            # 尝试原有的硬编码解析逻辑
+            scene_raw, seq_raw = split[-2], split[-1]
+            scene_prefix, scene_id = scene_raw.split("_")[0], scene_raw.split("_")[1]
+            seq_id = seq_raw.split("_")[1]
+            scene_name = scene_prefix + scene_id + "_seq" + seq_id
+        except (IndexError, ValueError):
+            # 如果路径格式不符合 (例如没有下划线)，则直接使用文件夹名
+            scene_name = split[-2] + "_" + split[-1]
+            print(f"=> [Custom Path] Using fallback scene name: {scene_name}")
+        
+        # 强制设置 scene_name 为 office2_seq2 以匹配 TRAIN_IDX_FIXED
+        if "office_2" in path and "Sequence_2" in path:
+            scene_name = "office2_seq2"
+            print(f"=> [DEBUG] Overriding scene_name to: {scene_name}")
         
         if not demo_setting: 
-            ply_path = os.path.join("./dust3r_results/Replica_{}v_thr{}_trimeshsave_minconf1/{}/sparse/0/points3D.ply".format(n_views, dust3r_min_conf_thr, scene))
+            ply_path = os.path.join("./dust3r_results/Replica_{}v_thr{}_trimeshsave_minconf1/{}/sparse/0/points3D.ply".format(n_views, dust3r_min_conf_thr, scene_name))
         else: 
             print("=> demo setting. ")
-            ply_path = os.path.join("./dust3r_results/Replica_6v_thr{}_trimeshsave_minconf1_demosetting/{}/sparse/0/points3D.ply".format(dust3r_min_conf_thr, scene))
+            ply_path = os.path.join("./dust3r_results/Replica_6v_thr{}_trimeshsave_minconf1_demosetting/{}/sparse/0/points3D.ply".format(dust3r_min_conf_thr, scene_name))
     
     elif dataset == "Scannetpp": 
         # path: './data/ScanNetpp/8a20d62ac0'
@@ -289,6 +301,9 @@ def readColmapSceneInfo(path, images, dataset, eval, n_views=0,
     
     elif dataset == "re10k": 
         ply_path = os.path.join("./dust3r_results/re10k_{}v_thr{}_trimeshsave_minconf1/{}/sparse/0/points3D.ply".format(n_views, dust3r_min_conf_thr, scene))
+    else:
+        # Default fallback for other datasets or if Colmap is used directly
+        ply_path = os.path.join(path, "sparse/0/points3D.ply")
 
     print(f"=> {n_views} views training. ply_path: {ply_path}. ")
 
@@ -457,6 +472,19 @@ def readColmapSceneInfo(path, images, dataset, eval, n_views=0,
             end_frame_idx = min(train_indices[-1]+extend_range+1, len(cam_infos)) # not included
 
             test_indices = list(range(start_frame_idx, end_frame_idx))[::TEST_INDICES_GAP]
+            
+            # --- MODIFICATION START: Support fixed test indices ---
+            if hasattr(args, 'test_indices_file') and args.test_indices_file:
+                import json
+                with open(args.test_indices_file, 'r') as f:
+                    test_indices = json.load(f)
+                print(f"=> [DEBUG] Loaded {len(test_indices)} test indices from {args.test_indices_file}")
+            elif hasattr(args, 'fixed_test_indices') and args.fixed_test_indices:
+                # 如果提供了固定索引，则覆盖默认逻辑
+                print(f"=> [DEBUG] Using fixed test indices: {args.fixed_test_indices}")
+                test_indices = args.fixed_test_indices
+            # --- MODIFICATION END ---
+
             for idx in train_indices: 
                 if idx in test_indices: 
                     test_indices.remove(idx)

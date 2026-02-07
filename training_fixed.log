@@ -1,0 +1,12 @@
+/opt/conda/lib/python3.10/site-packages/torch/cuda/__init__.py:51: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Traceback (most recent call last):
+  File "/workspace_fs/guidedvd-3dgs/train_guidedvd.py", line 27, in <module>
+    from gaussian_renderer import render, network_gui
+  File "/workspace_fs/guidedvd-3dgs/gaussian_renderer/__init__.py", line 15, in <module>
+    from scene.gaussian_model import GaussianModel
+  File "/workspace_fs/guidedvd-3dgs/scene/__init__.py", line 18, in <module>
+    from scene.dataset_readers import sceneLoadTypeCallbacks
+  File "/workspace_fs/guidedvd-3dgs/scene/dataset_readers.py", line 474
+    test_indices = list(range(start_frame_idx, end_frame_idx))[::TEST_INDICES_GAP]
+IndentationError: unexpected indent

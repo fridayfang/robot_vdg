@@ -1,10 +1,11 @@
 #!/bin/bash
 
-exp_name=$1
+timestamp=$(date +%m%d_%H%M)
+exp_name="${1}_${timestamp}"
 export CUDA_VISIBLE_DEVICES=$2  # CUDA device to use
 
-datasets=('room_0/Sequence_2' 'room_1/Sequence_1' 'room_2/Sequence_1' 'office_2/Sequence_2' 'office_3/Sequence_1' 'office_4/Sequence_2')
-# datasets=('room_0/Sequence_2')
+datasets=('office_2/Sequence_2')
+# datasets=('room_0/Sequence_2' 'room_1/Sequence_1' 'room_2/Sequence_1' 'office_2/Sequence_2' 'office_3/Sequence_1' 'office_4/Sequence_2')
 
 workspaces=()
 for dataset in "${datasets[@]}"; do
@@ -24,7 +25,7 @@ for i in ${!datasets[@]}; do
             --start_sample_pseudo 0 --sample_pseudo_interval 1 \
             --iterations 10000 \
             --pseudo_cam_weight 0.05 \
-            --guidance_gpu_id 1 --guidance_ddim_steps 50 --guidance_vd_iter 260 \
+            --guidance_gpu_id 0 --guidance_ddim_steps 50 --guidance_vd_iter 260 \
             --use_trajectory_pool \
             --pseudo_cam_lpips --pseudo_cam_lpips_weight 0.1 \
             --guidance_save_videos \
