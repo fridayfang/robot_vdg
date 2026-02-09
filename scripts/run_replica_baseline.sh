@@ -18,12 +18,16 @@ for i in ${!datasets[@]}; do
     
     echo "Processing dataset: $dataset with workspace: $workspace"
     
-    python train_baseline.py --dataset Replica --image rgb --source_path $dataset --model_path $workspace --eval  --n_views 6 \
-            --dust3r_min_conf_thr 1 --densify_grad_threshold 1e10 --position_lr_init 0. --position_lr_final 0. \
+    python train_baseline.py --dataset Replica --image rgb --source_path $dataset \
+            --model_path $workspace --eval  --n_views 6 --test_indices_file /workspace_fs/robot_vdg/test_set.json \
+            --dust3r_min_conf_thr 1 --densify_grad_threshold 1e10 \
+            --position_lr_init 0. --position_lr_final 0. 
 
-    python render.py --source_path $dataset --model_path $workspace --iteration 10000
+    echo "training complete" 
 
-    python metrics.py --source_path $dataset --model_path $workspace --iteration 10000
+    python render.py --source_path $dataset --model_path $workspace --iteration 10000 
+
+    python metrics.py --source_path $dataset --model_path $workspace --iteration 10000 
 
 done
 

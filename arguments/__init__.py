@@ -62,8 +62,9 @@ class ModelParams(ParamGroup):
         self.demo_setting = False
 
         self.replica_use_project_cam = False # use project cam for replica during training baseline
-        
-        
+        self.test_indices_file = "" # path to JSON file containing fixed test indices
+
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

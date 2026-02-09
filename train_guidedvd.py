@@ -600,7 +600,6 @@ if __name__ == "__main__":
 
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[1000, 5000, 10_000])
     parser.add_argument("--fixed_test_indices", nargs="+", type=int, default=[])
-    parser.add_argument("--test_indices_file", type=str, default=None)
     parser.add_argument("--tb_log_dir", type=str, default=None)
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_00, 10_000])
     parser.add_argument("--quiet", action="store_true")
