@@ -4,7 +4,7 @@ import numpy as np
 from argparse import ArgumentParser
 
 def evaluate(model_path): 
-        scenes = ['office_2/Sequence_2', 'office_3/Sequence_1', 'office_4/Sequence_2', 'room_0/Sequence_2', 'room_1/Sequence_1', 'room_2/Sequence_1']
+        scenes = ['office_2/Sequence_2']
 
 
         print(len(scenes))

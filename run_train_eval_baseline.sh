@@ -7,9 +7,9 @@ tb_log_dir="${job_artifacts_dir}/xflow_logs"
 
 # 1. 设置路径
 TIMESTAMP=$(date +"%m%d_%H%M")
-PROJECT_ROOT="/workspace_fs/guidedvd-3dgs"
+PROJECT_ROOT="/workspace_fs/robot_vdg"
 DATASET_PATH="$PROJECT_ROOT/dataset/Replica/office_2/Sequence_2"
-TEST_SET="/workspace_fs/test_set.json"
+TEST_SET="$PROJECT_ROOT/test_set.json"
 OUTPUT_ROOT="$PROJECT_ROOT/output/replica_office2_eval_${TIMESTAMP}"
 tb_task_dir="${tb_log_dir}/baseline_${TIMESTAMP}"
 

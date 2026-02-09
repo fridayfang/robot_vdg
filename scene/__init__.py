@@ -50,6 +50,9 @@ class Scene:
         self.project_cameras = {}
         self.all_cameras = {}
 
+        print(f"=> [DEBUG] Checking source_path: {args.source_path}")
+        print(f"=> [DEBUG] sparse exists: {os.path.exists(os.path.join(args.source_path, 'sparse'))}")
+        
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.dataset, args.eval, args.n_views, 
                                                         dust3r_min_conf_thr=args.dust3r_min_conf_thr, 

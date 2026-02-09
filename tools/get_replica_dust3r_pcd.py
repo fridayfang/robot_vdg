@@ -7,7 +7,7 @@ from utils.graphics_utils import fov2focal
 from tools.dust3r_to_colmap import convert_dust3r_to_colmap
 
 dust3r_model_path = "third_party/ViewCrafter/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth"
-scenes = ['room_0/Sequence_2', 'room_1/Sequence_1', 'room_2/Sequence_1', 'office_2/Sequence_2', 'office_3/Sequence_1', 'office_4/Sequence_2']
+scenes = ['office_2/Sequence_2']
 
 for scene in scenes: 
     path = f"dataset/Replica/{scene}"
