@@ -260,7 +260,7 @@ def storePly(path, xyz, rgb):
 
 def readColmapSceneInfo(path, images, dataset, eval, n_views=0, 
                         dust3r_min_conf_thr=1, demo_setting=False, 
-                        get_dust3r_pcd=False, replica_use_project_cam=False):
+                        get_dust3r_pcd=False, replica_use_project_cam=False, args=None):
     
     scene = path.split("/")[-1]
     if dataset == "Replica": 
@@ -353,7 +353,34 @@ def readColmapSceneInfo(path, images, dataset, eval, n_views=0,
     
     if eval:
         print("Dataset Type: ", dataset)
-        if dataset == "Replica": 
+        if dataset == "Replica":
+            # --- MODIFICATION START: Support fixed test indices for Replica ---
+            if hasattr(args, 'test_indices_file') and args.test_indices_file:
+                import json
+                with open(args.test_indices_file, 'r') as f:
+                    test_indices = json.load(f)
+                from loguru import logger
+                logger.info(f"=> [STRICT Replica] Loaded {len(test_indices)} test indices from {args.test_indices_file}: {test_indices}")
+                
+                # 定义训练视角 (office2_seq2)
+                train_idx = [244, 291, 436, 607, 760, 831] # 默认 6 视角
+                test_idx = test_indices
+                
+                train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx in train_idx]
+                test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx in test_idx]
+                
+                nerf_normalization = getNerfppNorm(train_cam_infos)
+                scene_info = SceneInfo(point_cloud=fetchPly(ply_path) if ply_path else None,
+                                       train_indices=train_idx, 
+                                       train_cameras=train_cam_infos,
+                                       test_cameras=test_cam_infos,
+                                       all_cameras=cam_infos, 
+                                       project_cameras=None, 
+                                       nerf_normalization=nerf_normalization,
+                                       ply_path=ply_path)
+                return scene_info
+            # --- MODIFICATION END ---
+
             if not demo_setting: 
                 TRAIN_IDX_FIXED = {
                     "office2_seq2": [244, 291, 436, 607, 760, 831], 
@@ -478,7 +505,26 @@ def readColmapSceneInfo(path, images, dataset, eval, n_views=0,
                 import json
                 with open(args.test_indices_file, 'r') as f:
                     test_indices = json.load(f)
-                print(f"=> [DEBUG] Loaded {len(test_indices)} test indices from {args.test_indices_file}")
+                from loguru import logger
+                logger.info(f"=> [STRICT] Loaded {len(test_indices)} test indices from {args.test_indices_file}: {test_indices}")
+                
+                # 关键修复：如果使用了 test_indices_file，直接锁定 test_idx 并返回，跳过后续所有默认逻辑
+                train_idx = train_indices
+                test_idx = test_indices
+                train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx in train_idx]
+                test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx in test_idx]
+                
+                nerf_normalization = getNerfppNorm(train_cam_infos)
+                scene_info = SceneInfo(point_cloud=fetchPly(ply_path) if ply_path else None,
+                                       train_indices=train_idx, 
+                                       train_cameras=train_cam_infos,
+                                       test_cameras=test_cam_infos,
+                                       all_cameras=cam_infos, 
+                                       project_cameras=None, 
+                                       nerf_normalization=nerf_normalization,
+                                       ply_path=ply_path)
+                return scene_info
+
             elif hasattr(args, 'fixed_test_indices') and args.fixed_test_indices:
                 # 如果提供了固定索引，则覆盖默认逻辑
                 print(f"=> [DEBUG] Using fixed test indices: {args.fixed_test_indices}")

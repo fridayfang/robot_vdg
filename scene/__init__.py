@@ -54,7 +54,8 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.dataset, args.eval, args.n_views, 
                                                         dust3r_min_conf_thr=args.dust3r_min_conf_thr, 
                                                         demo_setting=args.demo_setting, 
-                                                        replica_use_project_cam=args.replica_use_project_cam)
+                                                        replica_use_project_cam=args.replica_use_project_cam,
+                                                        args=args)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, args.n_views)

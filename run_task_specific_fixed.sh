@@ -24,9 +24,9 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 # 3. 杀死可能存在的旧进程
 pkill -f train_guidedvd.py
 
-# 4. 启动 Paper Default (Baseline) 训练任务
-# 使用 --guidance_random_traj 触发论文默认的全向采样逻辑
-echo "=> Launching Paper Default (Baseline) Training..."
+# 4. 启动 机器人路径采样 训练任务
+# 使用 --robot_traj_path  机器人路径采样
+echo "=> Launching Task-Specific (Ours) Training..."
 python3 train_guidedvd.py \
     -s $DATASET_PATH \
     -m "$OUTPUT_ROOT/ours_task_specific_fixed" \

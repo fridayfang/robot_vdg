@@ -520,7 +520,7 @@ def prepare_output_and_logger(args):
 
     # Configure Loguru
     log_file = os.path.join(args.model_path, "train.log")
-    logger.add(log_file, rotation="500 MB", encoding="utf-8", backtrace=True, diagnose=True)
+    logger.add(log_file, rotation="500 MB", encoding="utf-8", backtrace=True, diagnose=True, level="DEBUG")
     logger.info("Loguru logger initialized. Log file: {}", log_file)
 
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
@@ -565,6 +565,10 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations
                     _psnr = psnr(image, gt_image, _mask).mean().double()
                     _ssim = ssim(image, gt_image, _mask).mean().double()
                     _lpips = lpips(image, gt_image, _mask, net_type='vgg')
+                    
+                    # 记录每一帧的详细指标到 loguru
+                    logger.debug(f"[ITER {iteration}] {config['name']} Frame {viewpoint.image_name}: PSNR {_psnr:.4f} SSIM {_ssim:.4f} LPIPS {_lpips:.4f}")
+                    
                     psnr_test += _psnr
                     ssim_test += _ssim
                     lpips_test += _lpips

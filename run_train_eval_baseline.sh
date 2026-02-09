@@ -11,6 +11,7 @@ PROJECT_ROOT="/workspace_fs/guidedvd-3dgs"
 DATASET_PATH="$PROJECT_ROOT/dataset/Replica/office_2/Sequence_2"
 TEST_SET="/workspace_fs/test_set.json"
 OUTPUT_ROOT="$PROJECT_ROOT/output/replica_office2_eval_${TIMESTAMP}"
+tb_task_dir="${tb_log_dir}/baseline_${TIMESTAMP}"
 
 # 2. 准备环境
 cd $PROJECT_ROOT
@@ -25,11 +26,11 @@ echo "=> Launching Paper Default (Baseline) Training..."
 python3 train_guidedvd.py \
     -s $DATASET_PATH \
     -m "$OUTPUT_ROOT/baseline_default" \
-    --tb_log_dir "$tb_log_dir" \
+    --tb_log_dir "$tb_task_dir" \
     --guidance_random_traj \
     --test_indices_file $TEST_SET \
     --iterations 10000 \
-    --test_iterations 1000 5000 10000 \
+    --test_iterations 10 100 1000 2000 3000 5000 7000 10000 \
     --guidance_gpu_id 0 \
     --dataset Replica \
     --images rgb \
