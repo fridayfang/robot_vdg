@@ -30,13 +30,14 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from lpipsPyTorch import lpips
+from loguru import logger
 
 
 def training(dataset, opt, pipe, args):
     testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from = args.test_iterations, \
             args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer = prepare_output_and_logger(args)
     gaussians = GaussianModel(args)
     scene = Scene(args, gaussians, shuffle=False)
     gaussians.training_setup(opt)
@@ -95,11 +96,11 @@ def training(dataset, opt, pipe, args):
                             testing_iterations, scene, render, (pipe, background))
 
             if iteration > first_iter and (iteration in saving_iterations):
-                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                logger.info(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
 
             if iteration > first_iter and (iteration in checkpoint_iterations):
-                print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                logger.info(f"\n[ITER {iteration}] Saving Checkpoint")
                 torch.save((gaussians.capture(), iteration),
                            scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
@@ -135,8 +136,14 @@ def prepare_output_and_logger(args):
         args.model_path = os.path.join("./output/", unique_str[0:10])
 
     # Set up output folder
-    print("Output folder: {}".format(args.model_path))
+    logger.info(f"Output folder: {args.model_path}")
     os.makedirs(args.model_path, exist_ok = True)
+    
+    # Configure Loguru
+    log_file = os.path.join(args.model_path, "train.log")
+    logger.add(log_file, rotation="500 MB", encoding="utf-8", backtrace=True, diagnose=True)
+    logger.info("Loguru logger initialized. Log file: {}", log_file)
+
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
 
@@ -145,7 +152,7 @@ def prepare_output_and_logger(args):
     if TENSORBOARD_FOUND:
         tb_writer = SummaryWriter(args.model_path)
     else:
-        print("Tensorboard not available: not logging progress")
+        logger.warning("Tensorboard not available: not logging progress")
     return tb_writer
 
 
@@ -185,8 +192,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations
                 ssim_test /= len(config['cameras'])
                 lpips_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])
-                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {} SSIM {} LPIPS {} ".format(
-                    iteration, config['name'], l1_test, psnr_test, ssim_test, lpips_test))
+                logger.info(f"\n[ITER {iteration}] Evaluating {config['name']}: L1 {l1_test} PSNR {psnr_test} SSIM {ssim_test} LPIPS {lpips_test} ")
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
@@ -216,9 +222,8 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
 
-    print(args.test_iterations)
-
-    print("Optimizing " + args.model_path)
+    logger.info(f"Test iterations: {args.test_iterations}")
+    logger.info(f"Optimizing {args.model_path}")
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
@@ -229,4 +234,4 @@ if __name__ == "__main__":
     training(lp.extract(args), op.extract(args), pp.extract(args), args)
 
     # All done
-    print("\nTraining complete.")
+    logger.success("\nTraining complete.")

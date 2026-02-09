@@ -1,10 +1,16 @@
 #!/bin/bash
 
+IFS='/' read -ra parts <<<${BIFROST_JOB_DIR}
+job_artifacts_dir="/workspace/${parts[-2]}/${parts[-1]}"
+tb_log_dir="${job_artifacts_dir}/xflow_logs"
+
+
 # 1. 设置路径
+TIMESTAMP=$(date +"%m%d_%H%M")
 PROJECT_ROOT="/workspace_fs/guidedvd-3dgs"
 DATASET_PATH="$PROJECT_ROOT/dataset/Replica/office_2/Sequence_2"
 TEST_SET="/workspace_fs/test_set.json"
-OUTPUT_ROOT="$PROJECT_ROOT/output/replica_office2_eval_v1"
+OUTPUT_ROOT="$PROJECT_ROOT/output/replica_office2_eval_${TIMESTAMP}"
 
 # 2. 准备环境
 cd $PROJECT_ROOT
@@ -19,6 +25,7 @@ echo "=> Launching Paper Default (Baseline) Training..."
 python3 train_guidedvd.py \
     -s $DATASET_PATH \
     -m "$OUTPUT_ROOT/baseline_default" \
+    --tb_log_dir "$tb_log_dir" \
     --guidance_random_traj \
     --test_indices_file $TEST_SET \
     --iterations 10000 \

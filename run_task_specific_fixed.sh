@@ -3,15 +3,41 @@
 # 设置 PYTHONPATH 确保能找到项目模块
 export PYTHONPATH=$PYTHONPATH:/workspace_fs/guidedvd-3dgs
 
-# 运行 Task-Specific 引导训练，并使用固定的测试集索引
+#!/bin/bash
+
+IFS='/' read -ra parts <<<${BIFROST_JOB_DIR}
+job_artifacts_dir="/workspace/${parts[-2]}/${parts[-1]}"
+tb_log_dir="${job_artifacts_dir}/xflow_logs"
+
+
+# 1. 设置路径
+TIMESTAMP=$(date +"%m%d_%H%M")
+PROJECT_ROOT="/workspace_fs/guidedvd-3dgs"
+DATASET_PATH="$PROJECT_ROOT/dataset/Replica/office_2/Sequence_2"
+TEST_SET="/workspace_fs/test_set.json"
+OUTPUT_ROOT="$PROJECT_ROOT/output/replica_office2_eval_${TIMESTAMP}"
+
+# 2. 准备环境
+cd $PROJECT_ROOT
+export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
+
+# 3. 杀死可能存在的旧进程
+pkill -f train_guidedvd.py
+
+# 4. 启动 Paper Default (Baseline) 训练任务
+# 使用 --guidance_random_traj 触发论文默认的全向采样逻辑
+echo "=> Launching Paper Default (Baseline) Training..."
 python3 train_guidedvd.py \
-    -s /workspace_fs/guidedvd-3dgs/dataset/Replica/office_2/Sequence_2 \
-    -m /workspace_fs/guidedvd-3dgs/output/replica_guidedvd_office2_task_specific_fixed_test \
+    -s $DATASET_PATH \
+    -m "$OUTPUT_ROOT/ours_task_specific_fixed" \
+    --tb_log_dir "$tb_log_dir" \
     --robot_traj_path /workspace_fs/robot_walk_2/w2cs.json \
+    --test_indices_file $TEST_SET \
     --iterations 10000 \
-    --test_iterations 1000 2000 3000 5000 7000 10000 \
-    --fixed_test_indices 150 151 152 138 136 137 139 149 153 135 134 140 148 154 133 141 147 155 132 142 \
+    --test_iterations 10 1000 2000 3000 5000 7000 10000 \
     --guidance_gpu_id 0 \
     --dataset Replica \
     --images rgb \
     --eval
+
+echo "=> Baseline Training Complete."
