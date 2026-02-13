@@ -58,7 +58,7 @@ def training(dataset, opt, pipe, args):
     assert not scene.shuffle
 
     # === [新增] 保存训练和测试图片用于 Debug ===
-    print("=> Saving train/test images to output folder for debugging...")
+    logger.info("=> Saving train/test images to output folder for debugging...")
     train_save_dir = os.path.join(scene.model_path, "images/train")
     test_save_dir = os.path.join(scene.model_path, "images/test")
     os.makedirs(train_save_dir, exist_ok=True)
@@ -75,7 +75,7 @@ def training(dataset, opt, pipe, args):
     temp_planner = TrajectoryPlanner(scene, None, None, opt)
     temp_planner.visualize_cameras(scene.getTrainCameras(), scene.getTestCameras())
 
-    print(f"✅ Images and Pose Vis saved: {len(scene.getTrainCameras())} train, {len(scene.getTestCameras())} test.")
+    logger.info(f"✅ Images and Pose Vis saved: {len(scene.getTrainCameras())} train, {len(scene.getTestCameras())} test.")
     # ========================================
     
     gaussians.training_setup(opt)
@@ -94,7 +94,7 @@ def training(dataset, opt, pipe, args):
     easy_renderer = EasyRenderer(
         model_path=model_path, 
         iteration=opt.iterations)
-    print("Easy renderer set up done. ")
+    logger.info("Easy renderer set up done. ")
 
     loss_guidance_fn = LossGuidance(
         ddim_steps=opt.guidance_ddim_steps, 
@@ -132,7 +132,7 @@ def training(dataset, opt, pipe, args):
         if args.dataset == "Scannetpp": 
             vc_wrapper.vc_opts.height = 320
             vc_wrapper.vc_opts.width = 512
-            print("=> scannetpp video diffusion resolution: {}x{}. ".format(vc_wrapper.vc_opts.height, vc_wrapper.vc_opts.width))
+            logger.info("=> scannetpp video diffusion resolution: {}x{}. ".format(vc_wrapper.vc_opts.height, vc_wrapper.vc_opts.width))
 
     tmp_cams = [scene.scene_info_all_cams[0]]
     _, intrinsics, H, W = vc_wrapper.parse_cameras(tmp_cams)
@@ -148,11 +148,12 @@ def training(dataset, opt, pipe, args):
             # 实验组：从机器人 JSON 加载
             trajectory_pool, trajectory_pool_shuffle = planner.plan_trajectories(
                 method="from_json", 
-                json_path=opt.robot_traj_path
+                json_path=opt.robot_traj_path,
+                fovx=fovx, fovy=fovy, intrinsic=intrinsic, H=H, W=W
             )
         else:
             # 对照组：运行论文默认逻辑
-            print("=> Render several views for each training view to decide the trajectory.")
+            logger.info("=> Render several views for each training view to decide the trajectory.")
             trajectory_pool, trajectory_pool_shuffle = planner.plan_trajectories(
                 method="paper_default",
                 fovx=fovx, fovy=fovy, intrinsic=intrinsic, H=H, W=W
@@ -252,7 +253,7 @@ def training(dataset, opt, pipe, args):
         with torch.no_grad(): 
             if iteration % 100 == 0: 
                 print_str = "[Iter {}] Loss: {}  L1: {}  pseudo_l1: {} ".format(iteration, loss.item(), Ll1.item(), pseudo_loss.item())
-                print(print_str)
+                logger.info(print_str)
             
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss,
@@ -296,7 +297,7 @@ def training(dataset, opt, pipe, args):
 
         
         if (iteration-1) % opt.guidance_vd_iter == 0 and iteration < args.end_sample_pseudo: 
-            print("=> Running video diffusion at iteration {} ...".format(iteration))
+            logger.info(f"=> Running video diffusion at iteration {iteration} ...")
             
             if opt.guidance_random_traj: 
                 # ... (保持原有逻辑)
@@ -314,6 +315,7 @@ def training(dataset, opt, pipe, args):
             which_train_view = None
             if opt.use_trajectory_pool:
                 # 尝试从 vd_generated_indices 中弹出一个在池中的视角
+                logger.info(f"=> Trying to find a view in trajectory pool with length {len(vd_generated_indices)} at iteration {iteration} ...")
                 for i in range(len(vd_generated_indices)):
                     candidate_view = vd_generated_indices[i]
                     if candidate_view in trajectory_pool and len(trajectory_pool[candidate_view]) > 0:
@@ -322,6 +324,7 @@ def training(dataset, opt, pipe, args):
                 
                 # 如果没找到（例如机器人路径只经过了某些视角附近），则从池中随机选一个
                 if which_train_view is None:
+                    logger.info(f"=> No trajectories available in pool. Falling back to default.")
                     available_views = [v for v in trajectory_pool.keys() if len(trajectory_pool[v]) > 0]
                     if len(available_views) > 0:
                         which_train_view = random.choice(available_views)
@@ -331,6 +334,7 @@ def training(dataset, opt, pipe, args):
             # 如果还是 None (非池模式或池为空)，则使用默认弹出
             if which_train_view is None:
                 which_train_view = vd_generated_indices.pop()
+                logger.info(f"=> No trajectories available in pool. Falling back to default.")
             
             if opt.use_trajectory_pool and which_train_view in trajectory_pool:  
                 if len(trajectory_pool_shuffle[which_train_view]) == 0: 
@@ -342,11 +346,15 @@ def training(dataset, opt, pipe, args):
 
                 vc_wrapper.vc_opts.center_scale = cur_traj_center_scale
 
+                logger.info(f"=> Using center scale {cur_traj_center_scale} for video diffusion at iteration {iteration} ...")
                 pc_render_results, camera_traj_c2ws = vc_wrapper.preprocess_video_diffusion(
                     which_train_view, 
                     torch.from_numpy(defined_camera_traj_c2ws).to(vc_wrapper.device), 
                     pc_render_single_view=not opt.guidance_pc_render_all_views)
             else: 
+                logger.info(f"=> Using default view {which_train_view} for video diffusion at iteration {iteration} ...")
+                interp_idx = 0 # 默认为0
+                cur_traj_center_scale_idx = 1 # 默认为1
                 pc_render_results, camera_traj_c2ws = vc_wrapper.preprocess_video_diffusion(
                     which_train_view, 
                     pc_render_single_view=not opt.guidance_pc_render_all_views)
@@ -362,7 +370,7 @@ def training(dataset, opt, pipe, args):
                 # use the current training gs to render guidance images. But we do not use this. 
                 # we still use the baseline 3dgs to render guidance images. 
 
-                print("=> Use the on-train gs to render guidance images at iteration {}. ".format(iteration))
+                logger.info("=> Use the on-train gs to render guidance images at iteration {}. ".format(iteration))
                 for i in range(camera_traj_c2ws.shape[0]): 
                     c2w_i = camera_traj_c2ws[i]
                     w2c_i = np.linalg.inv(c2w_i)
@@ -431,7 +439,7 @@ def training(dataset, opt, pipe, args):
                 os.makedirs(videos_dir, exist_ok=True)
                 video_file = os.path.join(videos_dir, "{}.pth".format(interp_idx))
                 torch.save(diffusion_results, video_file)
-                print("=> Save video file at {}. ".format(video_file))
+                logger.info("=> Save video file at {}. ".format(video_file))
 
             
             if opt.append_pcd_from_video_diffusion: 
@@ -447,7 +455,7 @@ def training(dataset, opt, pipe, args):
 
                 # project the pointcloud based on metric_depth
                 append_frame_gap = 5
-                print("=> Inpaint the point cloud of with predicted depth. Select the points every {} frame. ".format(append_frame_gap))
+                logger.info("=> Inpaint the point cloud of with predicted depth. Select the points every {} frame. ".format(append_frame_gap))
                 append_pts, append_rgbs = [], []
                 for i in range(diffusion_results.shape[0]): 
                     # if i % append_frame_gap != 0:
@@ -461,7 +469,7 @@ def training(dataset, opt, pipe, args):
                     append_rgbs.append(append_rgbs_i[::append_frame_gap])
                 append_pts = np.concatenate(append_pts, 0).astype(np.float32)
                 append_rgbs = np.concatenate(append_rgbs, 0).astype(np.float32)
-                print("=> Appended points in total: {}. ".format(append_pts.shape[0]))
+                logger.info("=> Appended points in total: {}. ".format(append_pts.shape[0]))
 
                 # TODO: filter out nan points
                 append_pts = torch.from_numpy(append_pts)
@@ -474,7 +482,7 @@ def training(dataset, opt, pipe, args):
 
                 append_pts = append_pts[valid].cpu().numpy()
                 append_rgbs = append_rgbs[valid].cpu().numpy()
-                print("=> Appended points in total (filter invalid): {}. ".format(append_pts.shape[0]))
+                logger.info("=> Appended points in total (filter invalid): {}. ".format(append_pts.shape[0]))
 
                 # append to gaussian
                 gaussians.add_points(append_pts, append_rgbs)
@@ -501,7 +509,7 @@ def training(dataset, opt, pipe, args):
                 if np.random.rand() > 0.8: # 20%
                     pseudo_stack_alltime.append(cam)
             
-            print("=> Generated sequence around idx {} is pushed to the stack. Stack length: {}. ".format(which_train_view, len(pseudo_stack)))
+            logger.info("=> Generated sequence around idx {} is pushed to the stack. Stack length: {}. ".format(which_train_view, len(pseudo_stack)))
 
 
     
@@ -521,7 +529,7 @@ def prepare_output_and_logger(args):
     # Configure Loguru
     log_file = os.path.join(args.model_path, "train.log")
     logger.add(log_file, rotation="500 MB", encoding="utf-8", backtrace=True, diagnose=True, level="DEBUG")
-    logger.info("Loguru logger initialized. Log file: {}", log_file)
+    logger.info(f"Loguru logger initialized. Log file: {log_file} output folder: {args.model_path}")
 
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
